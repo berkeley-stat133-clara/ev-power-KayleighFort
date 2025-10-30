@@ -5,6 +5,13 @@ format: typst
 # Lab 4 Worksheet - Practice
 
 * add something about loading a csv and having to use
+```{r}
+library(tidyverse)
+library(dplyr)
+library(stringr)
+library(maps)
+```
+
 # Split the one column into four
 energy_raw <- separate(
   energy_raw,
@@ -25,29 +32,33 @@ energy_sources <- c("Solar (MWh)", "Wind (GWh)", "Coal (MWh)", "Hydro (kWh)")
 a.  Use str_detect() to identify all energy sources that contain the substring "Wind" or "Hydro" (hint: use the \| operator in regex).
 
 ```{r}
-
+str_detect(energy_sources, c("Wind|Hydro"))
 ```
 
 b.  Extract the unit type (e.g., MWh, GWh, kWh) using str_extract(). Make sure your pattern handles extra spaces or hyphens.
 
 ```{r}
-
+energy_sources_unit <- str_extract(energy_sources, "\\b[MGk]Wh\\b")
 ```
 
 c.  Clean the names to keep only the energy source name, trimming whitespace and removing parentheses.
 
 ```{r}
-
+clean_names <- str_remove_all(energy_sources, "\\s*\\(.*\\)") |>
+  str_trim()
+clean_names
 ```
 
 d.  Create a clean tibble called energy_clean with two columns: source and unit.
 
 ```{r}
-
+energy_clean <- tibble(source=clean_names, unit=energy_sources_unit)
+energy_clean
 ```
 
 e.  Discussion: Why might regex cleaning be important before performing joins or aggregations?\
     \
+    prevents repetition of columns, helps clean up real world data, creates consistent keys for joining
 
 #### Q2. State Datasets: Joins and Pivots
 
@@ -76,20 +87,26 @@ states
 a.  Perform a left join to combine socioeconomic and regional data.
 
 ```{r}
+socioeconomic_regional <- states |>
+  left_join(regions, by="state")
 
+head(socioeconomic_regional)
 ```
 
 b.  Perform an inner join. How many rows remain, and why is it the same or different?
 
 ```{r}
-
+state_inner_join <- states |>
+  inner_join(regions, by="state")
+nrow(state_inner_join)
 ```
 
 
 c.  Perform an anti join to check if any state names don’t match between datasets. What might cause mismatches like this in real projects?
 
 ```{r}
-
+anti_join(states, regions, by="state")
+#mistmatches for places like Puerto rico or DC
 ```
 
 d.  Discussion: Why would you prefer a left join over an inner join when merging state-level datasets?\
@@ -98,6 +115,10 @@ e. Use pivot_longer() to make the socioeconomic data longer.\
 
 ```{r}
 
+longer_socioeconomic <- states |>
+  pivot_longer(cols=c("Income", "Population", "Illiteracy"), names_to="Variables", values_to="Values")
+
+head(longer_socioeconomic)
 ```
 
 #### Q2.5.
@@ -121,19 +142,27 @@ sales
 a. Convert the dataset from wide (one column per month) to long (one row per month per store).
 
 ```{r}
-
+sales_longer <- pivot_longer(sales, cols=Jan_Sales:Mar_Sales, names_to="Month", values_to="Sales")
+sales_longer
 ```
 
 b. Clean month names by removing _Sales.
 
 ```{r}
-
+sales_longer <- sales_longer |>
+  mutate(Month = str_remove(Month, "_Sales"))
+sales_longer
 ```
 
 c. Convert the long dataset back to wide, with one column per month.
 
 ```{r}
-
+back_to_wide <- sales_longer |>
+  pivot_wider(
+    names_from="Month", 
+    values_from="Sales"
+  )
+  back_to_wide
 ```
 
 #### Q3. Mapping
@@ -150,13 +179,14 @@ us_map <- map_data("state")
 state_data <- states |>
   left_join(regions, by = "state") |>
   mutate(state = tolower(state))
-
+head(state_data)
 ```
 
 Use a join to combine the us_map with the state_data
 
 ```{r}
-us_map_joined <- ...
+us_map_joined <- left_join(us_map, state_data, by=c("region" = "state"))
+head(us_map_joined)
 ```
 
 Create a chloropleth map:
@@ -173,7 +203,12 @@ ggplot(us_map_joined, aes(long, lat, group = group, fill = Income)) +
 b.  Swap Income for Life Exp to visualize life expectancy instead. Try changing the color scale using scale_fill_gradient() or scale_fill_gradient2()
 
 ```{r}
-
+ggplot(us_map_joined, aes(long, lat, group=group, fill=Illiteracy)) +
+  geom_polygon(color="white") +
+  coord_fixed(1.3) +
+  theme_minimal() +
+  scale_fill_gradient(low="lightblue", high="darkgreen") + 
+  labs(title="Illiteracy by State")
 ```
 
 #### Q4. Quarto Dashboard Setup

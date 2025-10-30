@@ -1,6 +1,6 @@
 ---
-title: "EV Power - Lab 4 Project Report"
-format: typst
+title: "Proportions of Renewable Energy Usage in the US - Lab 4 Project Report"
+format: pdf
 ---
 
 # Example Solution 1
@@ -8,27 +8,173 @@ format: typst
 ## **Part 0: libraries**
 
 ```{r}
-
+#| echo: false
+#| include: false
+library(tidyverse)
+library(maps)
+library(sf)
+library(scatterpie)
 ```
 
 ## **Part 1:** **Defining Research Question**
 
-Chosen Question:
+Given the datasets containing the renewable energy uses per state, both compared to total energy usage and subtotals of types of renewable energy, I decided to compare the proportions of renewable energy used by each state in 2023, to see which ones are most/least used in each state. 
+
+Chosen Question: What is the most prominant renewable energy source used by each state in 2023?
 
 ## **Part 2: Data Preparation and Cleaning**
 
 ```{r}
+#| echo: false
+#| warning: false
+renewable_2023 <- read_csv("data/renew-use-2023.csv")
+total_2023 <- read_csv("data/total-use-2023.csv")
 
+#capitalize state names
+renewable_2023 <- renewable_2023 |>
+    mutate(State = toupper(State))
+
+#convert energy usage values to the same unit (kWh) and replace NA with 0
+renewable_2023 <- renewable_2023 |>
+    mutate( 
+        Renewable_Use_2023 = replace_na(Renewable_Use_2023, 0), 
+        Renewable_Use_2023 = str_replace_all(Renewable_Use_2023, fixed("\u00A0"), " "), 
+        Renewable_Use_2023 = str_trim(Renewable_Use_2023), 
+        Renewable_Use_2023 = case_when(
+            str_detect(Renewable_Use_2023, "MWh") ~ as.numeric(str_extract(Renewable_Use_2023, "[0-9.]+")) * 1000, 
+            str_detect(Renewable_Use_2023, "kWh") ~ as.numeric(str_extract(Renewable_Use_2023, "[0-9.]+")),
+            str_detect(Renewable_Use_2023, "^[0-9.]+$") ~ as.numeric(Renewable_Use_2023), 
+            TRUE ~ 0
+        ))
+
+state_cols <- setdiff(colnames(total_2023), "Energy_Source")
+total_2023 <- total_2023 |>
+    mutate(across(all_of(state_cols), ~ replace_na(., 0))) |>
+    mutate(across(all_of(state_cols), ~ case_when(
+        str_detect(., "BTU") ~ as.numeric(str_extract(., "[0-9]+"))/3412.142, 
+        TRUE ~ as.numeric(.)
+    ))) 
+total_2023[3, "Energy_Source"] <- "petroleum"
+head(total_2023)
 ```
 
 ## **Part 3: Joining / Pivoting Datasets for Analysis**
 
 ```{r}
+#| echo: false
+total_long <- total_2023 |>
+    pivot_longer(-Energy_Source, names_to="State", values_to="Value")
 
+ #create table for overall clean energy proportions, and then for each: Biomass, Geothermal, Hydropower, Solar energy, and wind energy
+total_by_state <- total_long |>
+     group_by(State) |>
+     summarize(total_energy=sum(Value))
+     
+renewable_by_state <- total_long |>
+     filter(Energy_Source == "total renewable-energy") |>
+     select(State, renewable_energy=Value)
+
+overall_total_prop <-
+    left_join(renewable_by_state, total_by_state, by="State") |>
+    mutate(prop_renewable=renewable_energy/total_energy) |>
+    select(State, prop_renewable)
+head(overall_total_prop)
+
+biomass_by_state <- renewable_2023 |>
+    filter(Energy_Source == "Biomass") |>
+    select(State, biomass_energy = Renewable_Use_2023)
+
+biomass_prop <- biomass_by_state |>
+    left_join(total_by_state, by="State") |>
+    mutate(prop_biomass = biomass_energy/total_energy) |>
+    mutate(across(everything())) |>
+    select(State, prop_biomass)
+head(biomass_prop)
+
+geothermal_by_state <- renewable_2023 |>
+    filter(Energy_Source == "Geothermal") |>
+    select(State, geothermal_energy = Renewable_Use_2023)
+
+geothermal_prop <- geothermal_by_state |>
+    left_join(total_by_state, by="State") |>
+    mutate(prop_geothermal = geothermal_energy/total_energy) |>
+    mutate(across(everything())) |>
+    select(State, prop_geothermal)
+head(geothermal_prop)
+
+hydropower_by_state <- renewable_2023 |>
+    filter(Energy_Source == "Hydropower") |>
+    select(State, hydropower_energy = Renewable_Use_2023)
+
+hydropower_prop <- hydropower_by_state |>
+    left_join(total_by_state, by="State") |>
+    mutate(prop_hydropower = hydropower_energy/total_energy) |>
+    mutate(across(everything())) |>
+    select(State, prop_hydropower)
+head(hydropower_prop)
+
+solar_by_state <- renewable_2023 |>
+    filter(Energy_Source == "Solar Energy") |>
+    select(State, solar_energy = Renewable_Use_2023)
+
+solar_prop <- solar_by_state |>
+    left_join(total_by_state, by="State") |>
+    mutate(prop_solar = solar_energy/total_energy) |>
+    mutate(across(everything())) |>
+    select(State, prop_solar)
+head(solar_prop)
+
+wind_by_state <- renewable_2023 |>
+    filter(Energy_Source == "Wind Energy") |>
+    select(State, wind_energy = Renewable_Use_2023)
+
+wind_prop <- wind_by_state |>
+    left_join(total_by_state, by="State") |>
+    mutate(prop_wind = wind_energy/total_energy) |>
+    mutate(across(everything())) |>
+    select(State, prop_wind)
+head(wind_prop)
+
+all_props <- list(overall_total_prop, biomass_prop, geothermal_prop, hydropower_prop, solar_prop, wind_prop) |>
+    reduce(full_join, by="State")
+head(all_props)
 ```
 
 ## **Part 4: Mapping Visualization**
 
 ```{r}
+#| echo: false
+#| warning: false
+state_lookup <- data.frame(State = tolower(state.abb), region = tolower(state.name))
+us_map <- map_data("state") 
+
+state_centers <- us_map |>
+    group_by(region) |>
+    summarize(long = mean(range(long)), lat = mean(range(lat)))
+
+all_props_pie <- all_props |>
+    mutate(State = tolower(State)) |>
+    left_join(state_lookup, by = "State") |>
+    left_join(state_centers, by = "region")
+
+ggplot() +
+    geom_polygon(
+        data=us_map, 
+        aes(x=long, y=lat, group=group), 
+        fill = "steelblue", color="darkgreen"
+    ) +
+    geom_scatterpie(
+        data=all_props_pie, 
+        aes(x=long, y=lat), 
+        cols=c("prop_biomass", "prop_geothermal", "prop_hydropower", "prop_solar", "prop_wind"), 
+        pie_scale=0.8) +
+            coord_fixed(1.3) +
+        labs(title="Proportions of Renewable Energy Sources by State (2023)",
+        fill = "Energy Type") +
+        theme_minimal()
+
 
 ```
+
+
+After looking at the visualization, I can see that a large amount of states located in the eastern part of the US use biomass renewable energy as their majority energy source. Wind power is prominent within midwestern states, and some states have more random majorities, like Arkansas being predominantly geothermal, and Colorado predominantly hydropower. 
